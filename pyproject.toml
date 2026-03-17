@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kittytgp"
+dynamic = ["version"]
+description = "Tiny kitty graphics protocol PNG renderer using Unicode placeholders"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [ {name = "Jeremy Howard"} ]
+keywords = ["kitty", "terminal", "graphics", "tmux", "png"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Terminals",
+]
+
+dependencies = [
+]
+
+[project.urls]
+Source = "https://github.com/answerdotai/kittytgp"
+
+[project.scripts]
+kittytgp = "kittytgp.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "kittytgp.__version__" }
+
+[tool.setuptools.package-data]
+kittytgp = ["rowcolumn_diacritics.txt"]
+
+[tool.setuptools.packages.find]
+include = ["kittytgp*"]
+
