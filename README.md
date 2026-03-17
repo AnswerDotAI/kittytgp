@@ -28,15 +28,8 @@ Useful options:
 kittytgp plot.png --cols 40
 kittytgp plot.png --rows 20
 kittytgp plot.png --cell-size 10x20
-kittytgp plot.png --passthrough tmux
 kittytgp plot.png --image-id 0x123456
 kittytgp plot.png --no-newline
-```
-
-Inside tmux, enable passthrough:
-
-```tmux
-set -g allow-passthrough on
 ```
 
 ## Python API
