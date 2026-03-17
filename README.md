@@ -1,6 +1,6 @@
 # kittytgp
 
-`kittytgp` is a tiny pure-Python package that renders a PNG with kitty's graphics protocol using Unicode placeholders (`U+10EEEE`).
+`kittytgp` is a small pure-Python package that renders a PNG with kitty's graphics protocol using Unicode placeholders (`U+10EEEE`).
 
 It follows kitty's tmux/editor-friendly placeholder flow:
 
@@ -8,7 +8,7 @@ It follows kitty's tmux/editor-friendly placeholder flow:
 2. create a **virtual** placement with `U=1`
 3. print `U+10EEEE` placeholder text colored with the image ID
 
-Because the visible part is ordinary Unicode text, the image moves with the text buffer and works inside hosts such as tmux, provided tmux passthrough is enabled.
+Because the visible part is ordinary Unicode text, the image moves with the text buffer and works inside hosts such as tmux.
 
 ## Install
 
@@ -66,3 +66,4 @@ This package intentionally stays small:
 - tmux passthrough only when needed
 
 By default it fits the image into the current terminal while preserving aspect ratio. If the terminal cannot report cell pixel size, pass `--cell-size`, `--cols`, or `--rows`.
+
