@@ -358,46 +358,33 @@ def _parse_cell_size(value: str) -> tuple[int, int]:
     return width, height
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Render a PNG with kitty Unicode placeholders")
-    parser.add_argument("png", help="Path to a PNG file, or - to read PNG bytes from stdin")
-    parser.add_argument("--cols", type=int, help="target width in terminal cells")
-    parser.add_argument("--rows", type=int, help="target height in terminal cells")
-    parser.add_argument("--cell-size", type=_parse_cell_size, help="manual terminal cell size in pixels, e.g. 10x20")
-    parser.add_argument("--image-id", type=lambda s: int(s, 0), help="24-bit image id (decimal or 0x-prefixed hex)")
-    parser.add_argument(
-        "--passthrough",
-        choices=("auto", "none", "tmux"),
-        default="auto",
-        help="wrap kitty APC commands for tmux passthrough",
+def render_image(
+    path_or_bytes: str | os.PathLike[str] | bytes,
+    *,
+    cols: int | None = None,
+    rows: int | None = None,
+    image_id: int | None = None,
+    passthrough: str = "auto",
+    cell_width_px: int | None = None,
+    cell_height_px: int | None = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    newline: bool = True,
+    out: BinaryIO | None = None,
+) -> int:
+    """
+    Renders an image in the terminal. Uses Pillow to convert formats if necessary.
+    """
+    from .formats import load_image
+    png_data, _ = load_image(path_or_bytes)
+    return render_png(
+        png_data,
+        cols=cols,
+        rows=rows,
+        image_id=image_id,
+        passthrough=passthrough,
+        cell_width_px=cell_width_px,
+        cell_height_px=cell_height_px,
+        chunk_size=chunk_size,
+        newline=newline,
+        out=out,
     )
-    parser.add_argument("--chunk-size", type=int, default=DEFAULT_CHUNK_SIZE, help="base64 bytes per graphics chunk")
-    parser.add_argument("--no-newline", action="store_true", help="do not print a trailing newline after the image")
-    return parser
-
-
-def _load_cli_png(arg: str) -> bytes | str:
-    return sys.stdin.buffer.read() if arg == "-" else arg
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-    cell_width_px = cell_height_px = None
-    if args.cell_size is not None:
-        cell_width_px, cell_height_px = args.cell_size
-    try:
-        render_png(
-            _load_cli_png(args.png),
-            cols=args.cols,
-            rows=args.rows,
-            image_id=args.image_id,
-            passthrough=args.passthrough,
-            cell_width_px=cell_width_px,
-            cell_height_px=cell_height_px,
-            chunk_size=args.chunk_size,
-            newline=not args.no_newline,
-        )
-    except Exception as exc:
-        parser.exit(1, f"kittytgp: {exc}\n")
-    return 0
