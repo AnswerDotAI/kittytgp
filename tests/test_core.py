@@ -57,3 +57,37 @@ def test_image_id_is_limited_to_24_bits():
         assert "24 bits" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected ValueError")
+
+def test_render_parts_splits_transmit_and_placeholder():
+    from kittytgp import render_parts, build_render_bytes
+    transmit, placeholder = render_parts(PNG_1X1, cols=3, rows=2, image_id=7, passthrough="none")
+    assert transmit.startswith(b"\x1b_G") and transmit.endswith(b"\x1b\\")
+    assert PLACEHOLDER in placeholder and "\x1b_G" not in placeholder
+    combined = build_render_bytes(PNG_1X1, cols=3, rows=2, image_id=7, newline=False, passthrough="none")
+    assert combined == transmit + placeholder.encode()
+
+def test_kitty_probe_and_supported():
+    from kittytgp import kitty_probe, kitty_supported, kitty_env_hint
+    from kittytgp.core import KITTY_PROBE_ID
+    p = kitty_probe(passthrough="none")
+    assert p.startswith(b"\x1b_G") and p.endswith(b"\x1b[c")  # query then the DA1 fence
+    assert kitty_supported(f"\x1b_Gi={KITTY_PROBE_ID};OK\x1b\\\x1b[?62c".encode())
+    assert not kitty_supported(b"\x1b[?62c")  # DA1 alone: fence reached, no graphics reply
+    assert kitty_env_hint({"TERM": "xterm-kitty"})
+    assert kitty_env_hint({"TERM_PROGRAM": "ghostty"})
+    assert kitty_env_hint({"GHOSTTY_RESOURCES_DIR": "/Applications/Ghostty.app/x"})  # survives into tmux panes
+    assert not kitty_env_hint({"TERM": "xterm-256color"})
+
+def test_passthrough_warning(monkeypatch, capsys):
+    import kittytgp.core as kc
+    monkeypatch.setattr(kc, '_tmux_passthrough_enabled', lambda: False)
+    monkeypatch.setattr(kc, '_warned_passthrough', False)
+    monkeypatch.setenv('TMUX', '/tmp/fake,1,0')
+    assert kc._resolve_passthrough('auto') == 'tmux'
+    assert 'allow-passthrough' in capsys.readouterr().err
+    kc._resolve_passthrough('tmux')
+    assert capsys.readouterr().err == ''  # warned once only
+    monkeypatch.setattr(kc, '_warned_passthrough', False)
+    monkeypatch.setattr(kc, '_tmux_passthrough_enabled', lambda: True)
+    kc._resolve_passthrough('tmux')
+    assert capsys.readouterr().err == ''  # enabled: silent

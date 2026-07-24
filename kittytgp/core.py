@@ -199,11 +199,35 @@ def _fit_cells(
     return max(1, math.ceil(width_px / cw)), max(1, math.ceil(height_px / ch))
 
 
+def _tmux_passthrough_enabled() -> bool | None:
+    "Effective `allow-passthrough` for this pane (inherited options included), or None when tmux cannot be asked."
+    try:
+        out = subprocess.run(["tmux", "show-options", "-pAqv", "allow-passthrough"],
+                             capture_output=True, text=True, timeout=1)
+        return out.stdout.strip() in ("on", "all")
+    except Exception:
+        return None
+
+
+_warned_passthrough = False
+
+
+def _warn_passthrough_off() -> None:
+    "Warn (once) when tmux would silently swallow the graphics transmit -- the classic invisible-images cause."
+    global _warned_passthrough
+    if _warned_passthrough or _tmux_passthrough_enabled() is not False: return
+    _warned_passthrough = True
+    print("kittytgp: tmux 'allow-passthrough' is off (the default since tmux 3.3a), so image data "
+          "cannot reach your terminal and placeholders will show nothing.\nFix now:  tmux set -g allow-passthrough on\n"
+          "Persist:  add 'set -g allow-passthrough on' to ~/.tmux.conf", file=sys.stderr)
+
+
 def _resolve_passthrough(mode: str) -> str:
     if mode not in {"auto", "none", "tmux"}:
         raise ValueError("passthrough must be 'auto', 'none', or 'tmux'")
     if mode == "auto":
-        return "tmux" if os.environ.get("TMUX") else "none"
+        mode = "tmux" if os.environ.get("TMUX") else "none"
+    if mode == "tmux": _warn_passthrough_off()
     return mode
 
 
@@ -258,6 +282,82 @@ def normalize_image_id(image_id: int | None) -> int:
     if image_id >= (1 << 24):
         raise ValueError("image_id must fit in 24 bits for this minimal renderer")
     return image_id
+
+
+def render_parts(
+    png: str | os.PathLike[str] | bytes,
+    *,
+    cols: int | None = None,
+    rows: int | None = None,
+    image_id: int | None = None,
+    passthrough: str = "auto",
+    cell_width_px: int | None = None,
+    cell_height_px: int | None = None,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    fileno: int | None = None,
+) -> tuple[bytes, str]:
+    """The kitty transmit bytes and the placeholder-grid text, separately.
+
+    For apps that route control bytes and printable text differently (e.g. a
+    compositor that writes the transmit raw but treats the placeholder grid as
+    ordinary repaintable text). With explicit ``cols`` and ``rows`` no terminal
+    is consulted, so this also works fully headless."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    png_data, image_width_px, image_height_px = _read_png(png)
+    image_id = normalize_image_id(image_id)
+    passthrough = _resolve_passthrough(passthrough)
+    if cols is None or rows is None:
+        geometry = get_terminal_geometry(
+            sys.stdout.buffer.fileno() if fileno is None else fileno,
+            cell_width_px=cell_width_px,
+            cell_height_px=cell_height_px,
+        )
+        cols, rows = _fit_cells(image_width_px, image_height_px, geometry, cols=cols, rows=rows, newline=False)
+    pieces = _iter_transmit_chunks(
+        png_data, cols=cols, rows=rows, image_id=image_id, chunk_size=chunk_size, passthrough=passthrough)
+    return b"".join(pieces), _placeholder_grid(cols, rows, image_id)
+
+
+KITTY_PROBE_ID = 4242
+
+
+def kitty_probe(passthrough: str = "auto") -> bytes:
+    """Bytes probing kitty-graphics support: a tiny ``a=q`` query (answered only by
+    supporting terminals) followed by DA1 (answered by every terminal, fencing the
+    probe: once the DA1 reply arrives, a silent query means no support)."""
+    passthrough = _resolve_passthrough(passthrough)
+    q = _graphics_apc(f"i={KITTY_PROBE_ID},s=1,v=1,a=q,t=d,f=24", b"AAAA", passthrough=passthrough)
+    return q + b"\x1b[c"
+
+
+def kitty_supported(response: bytes) -> bool:
+    "True when `response` (bytes read after `kitty_probe` until the DA1 reply) contains the graphics reply."
+    return f"\x1b_Gi={KITTY_PROBE_ID}".encode("ascii") in response
+
+
+def _tmux_client_term(env) -> str:
+    "The attached tmux client's terminal name (e.g. 'xterm-ghostty'), '' outside tmux or on any failure."
+    if not env.get("TMUX"): return ""
+    try:
+        out = subprocess.run(["tmux", "display-message", "-p", "#{client_termname}"],
+                             capture_output=True, text=True, timeout=1)
+        return out.stdout.strip()
+    except Exception:
+        return ""
+
+
+def kitty_env_hint(env=None) -> bool:
+    """Environment evidence of kitty-graphics support, for where probe replies cannot
+    arrive (tmux does not route terminal responses to panes). Checks terminal id vars
+    (KITTY_WINDOW_ID, GHOSTTY_RESOURCES_DIR survive into tmux panes), TERM/TERM_PROGRAM
+    (though tmux overwrites both), and finally asks tmux what its attached client is."""
+    if env is None: env = os.environ
+    term, prog = env.get("TERM", ""), env.get("TERM_PROGRAM", "").lower()
+    if (env.get("KITTY_WINDOW_ID") or env.get("GHOSTTY_RESOURCES_DIR")
+            or "kitty" in term or "ghostty" in term or prog in ("ghostty", "wezterm")): return True
+    client = _tmux_client_term(env)
+    return "kitty" in client or "ghostty" in client
 
 
 def build_render_bytes(
