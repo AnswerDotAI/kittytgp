@@ -1,4 +1,5 @@
-__version__ = "0.0.3"
+__version__ = "0.0.4"
+
 
 
 from .core import (build_render_bytes, render_png, render_parts, png_size, fit_grid, PNG_SIGNATURE,
