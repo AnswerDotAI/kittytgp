@@ -3,11 +3,12 @@ import base64
 from kittytgp.core import (
     DIACRITICS,
     PLACEHOLDER,
-    _parse_png_size,
     _placeholder_grid,
     _wrap_tmux_passthrough,
     build_render_bytes,
+    fit_grid,
     normalize_image_id,
+    png_size,
 )
 
 PNG_1X1 = base64.b64decode(
@@ -15,8 +16,20 @@ PNG_1X1 = base64.b64decode(
 )
 
 
-def test_parse_png_size():
-    assert _parse_png_size(PNG_1X1) == (1, 1)
+def test_png_size(tmp_path):
+    assert png_size(PNG_1X1) == (1, 1)
+    path = tmp_path / "dot.png"
+    path.write_bytes(PNG_1X1)
+    assert png_size(path) == (1, 1)
+
+
+def test_fit_grid():
+    assert fit_grid(10, 20, 40) == (10, 10)  # small image: one column per pixel, cells twice as tall
+    assert fit_grid(400, 300, 40) == (40, 15)  # wide image: scaled to the column budget
+    assert fit_grid(25, 25, 7) == (7, 4)  # 25 * (7/25) rounds just above 7, and the budget still holds
+    assert fit_grid(100, 1000, 40, max_rows=10) == (2, 10)  # the row budget binds
+    assert fit_grid(80, 160, 40, cell_width_px=8, cell_height_px=16) == (10, 10)  # real cells: true size
+    assert fit_grid(1, 10_000, 40) == (1, len(DIACRITICS))  # the most rows placeholders can address
 
 
 def test_tmux_wrap_doubles_escapes():

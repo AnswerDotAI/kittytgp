@@ -48,6 +48,16 @@ from kittytgp import build_render_bytes
 payload = build_render_bytes("plot.png")
 ```
 
+An app that draws its own screen can size the image and place each part itself. `png_size` reads a PNG's size in pixels. `fit_grid` chooses the largest grid within a column budget that keeps the image's aspect ratio, and consults no terminal. `render_parts` returns the transmit bytes and the placeholder text separately:
+
+```python
+from kittytgp import png_size, fit_grid, render_parts
+
+w, h = png_size("plot.png")
+cols, rows = fit_grid(w, h, max_cols=40)
+transmit, placeholder = render_parts("plot.png", cols=cols, rows=rows)
+```
+
 ## Design notes
 
 This package intentionally stays small:

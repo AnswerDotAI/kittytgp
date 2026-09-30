@@ -71,6 +71,12 @@ def _read_png(path_or_bytes: str | os.PathLike[str] | bytes) -> tuple[bytes, int
     return data, width, height
 
 
+def png_size(png: str | os.PathLike[str] | bytes) -> tuple[int, int]:
+    "Width and height in pixels of `png`, given as bytes or a path."
+    _, width, height = _read_png(png)
+    return width, height
+
+
 def _ioctl_winsize(fileno: int) -> tuple[int, int, int, int] | None:
     if fcntl is None or termios is None:
         return None
@@ -161,6 +167,30 @@ def get_terminal_geometry(
     raise RuntimeError("unable to determine terminal cell size; pass --cell-size, --cols, or --rows")
 
 
+def fit_grid(
+    width_px: int,  # Image width in pixels
+    height_px: int,  # Image height in pixels
+    max_cols: int,  # Most columns the grid may use
+    max_rows: int | None = None,  # Most rows the grid may use, or None for as many as placeholders can address
+    cell_width_px: float = 1,  # Cell width, measured in image pixels
+    cell_height_px: float = 2,  # Cell height, measured in image pixels
+) -> tuple[int, int]:
+    """Columns and rows of the largest placeholder grid for a `width_px` by `height_px` image within the budget.
+
+    The grid keeps the image's aspect ratio and never shows the image larger than its own pixels. The default
+    cell size, 1 by 2 image pixels, is for callers that do not know their terminal's cell size. It gives a
+    small image at most one column per pixel of its width. Pass a terminal's real cell size to show images at
+    their true size. No terminal is consulted."""
+    if max_rows is None:
+        max_rows = len(DIACRITICS)
+    if min(width_px, height_px, max_cols, max_rows, cell_width_px, cell_height_px) <= 0:
+        raise ValueError("image size, budget and cell size must be positive")
+    scale = min(max_cols * cell_width_px / width_px, max_rows * cell_height_px / height_px, 1.0)
+    cols = math.ceil(width_px * scale / cell_width_px)
+    rows = math.ceil(height_px * scale / cell_height_px)
+    return min(cols, max_cols), min(rows, max_rows)  # float rounding can put a ceil one past the budget
+
+
 def _fit_cells(
     image_width_px: int,
     image_height_px: int,
@@ -187,16 +217,14 @@ def _fit_cells(
         cols = math.ceil((image_width_px * rows * ch) / (image_height_px * cw))
         return max(1, cols), max(1, rows)
 
-    avail_cols = max(1, geometry.cols)
-    avail_rows = max(1, geometry.rows - (1 if newline else 0))
-    scale = min(
-        (avail_cols * cw) / image_width_px,
-        (avail_rows * ch) / image_height_px,
-        1.0,
+    return fit_grid(
+        image_width_px,
+        image_height_px,
+        max(1, geometry.cols),
+        max(1, geometry.rows - (1 if newline else 0)),
+        cell_width_px=cw,
+        cell_height_px=ch,
     )
-    width_px = max(1, math.ceil(image_width_px * scale))
-    height_px = max(1, math.ceil(image_height_px * scale))
-    return max(1, math.ceil(width_px / cw)), max(1, math.ceil(height_px / ch))
 
 
 def _tmux_passthrough_enabled() -> bool | None:
@@ -301,7 +329,8 @@ def render_parts(
     For apps that route control bytes and printable text differently (e.g. a
     compositor that writes the transmit raw but treats the placeholder grid as
     ordinary repaintable text). With explicit ``cols`` and ``rows`` no terminal
-    is consulted, so this also works fully headless."""
+    is consulted, so this also works fully headless. `fit_grid` chooses ``cols``
+    and ``rows`` from a column budget."""
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
     png_data, image_width_px, image_height_px = _read_png(png)
